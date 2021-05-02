@@ -10,139 +10,103 @@ from cv2 import VideoWriter, VideoWriter_fourcc
 from PIL import *
 
 def tween(start, end, t):
-    xv = (1 - math.cos(t * 3.1415927)) / 2
-    return start + ((end - start) * xv)
+    val = (1 - math.cos(t * 3.1415927)) / 2
+    return start + ((end - start) * val)
 
 def main():
+    processScript('steamedhams.json', 'steamTest.mp4', 'a.png', './per.ttf')
+
+def processScript(script, outFile, colorMaskFile=None, fontPath=None):
     words = ''
-    layouts = {}
+    oldLayout = []
+    newLayout = []
     maxframe = 0
     minframe = None
     lastframe = 0
-    rScaling = 0.5
-    fontpath = './per.ttf'
+    nextFrame = 0
+    lastFrame = 0
+
+    # Initialize video
+    fourcc = VideoWriter_fourcc(*'mp4v')
+    video = VideoWriter(outFile, fourcc, 30.0, (1920, 1080))
+
     # Load file
-    with open('alanwatts.json') as f:
+    with open(script) as f:
         transcript = json.load(f)
 
-    alan_coloring = np.array(Image.open('a.png'))
+    # Load color mask
+    if (colorMaskFile):
+        colorMask = np.array(Image.open(colorMaskFile))
 
     # Build the layouts
     for item in transcript['results']['items']:
         if item['type'] == 'pronunciation':
-            w = item['alternatives'][0]['content'] + ' '
-            ic(f'New Word: {w}')
+            newWord = item['alternatives'][0]['content']
+            ic(newWord)
             # It's a word! Add it to the list and build a cloud
-            words += w + ' '
-            frame = int(float(item['start_time']) * 30)  # Frame number at 30fps
-            # times.append(frame)
-            try:
-                wordcloud = WordCloud(
-                    width=1920,
-                    height=1080,
-                    scale=1,
-                    font_path=fontpath,
-                    #random_state=1781,
-                    relative_scaling=rScaling,
-                    prefer_horizontal=1,
-                    stopwords = None,
-                    max_words=5000,
-                    #mode = 'RGBA',
-                    max_font_size = 150,
-                    min_font_size = 1
-                ).generate(words)
-            except:
-                continue
-            if (wordcloud.layout_ in layouts.values()) == False: # Skip duplicate layouts (stop words)
-                layouts[frame] = wordcloud.layout_
-            if minframe == None:
-                minframe = frame
-            maxframe = frame
-            # image = wordcloud.to_file(str(frame) + '.png')
-    
-    ic('Done with words')
-
-    fourcc = VideoWriter_fourcc(*'mp4v')
-    video = VideoWriter('alan.mp4', fourcc, 30.0, (1920, 1080))
-
-    # Build the frames
-    for fr in range(0, maxframe):
-        ic(f'New Frame {fr}/{maxframe}')
-        wordcloud = WordCloud(
-            width=1920,
-            height=1080,
-            scale=1,
-            color_func=lambda *args, **kwargs: "yellow",
-            font_path=fontpath,
-            relative_scaling=rScaling,
-            #random_state=1781,
-            prefer_horizontal=1,
-            stopwords = None,
-            max_font_size = 256,
-            min_font_size = 2
-        )
-        if (fr < minframe):
-            wordcloud.layout_ = layouts[minframe]
-        elif fr == maxframe:
-            wordcloud.layout_ = layouts[maxframe]
-        else:
-            oldLayout = []
-            newLayout = []
-            oldfr = -1
-            newfr = -1
-            for ofi in range(fr, 0, -1):
-                if ofi in layouts.keys():
-                    if isinstance(layouts[ofi], list):
-                        oldLayout = layouts[ofi]
-                    else:
-                        oldLayout = [layouts[ofi]]
-                    oldfr = ofi
-                    break
-            for nfi in range(fr+1, maxframe, 1):
-                if nfi in layouts.keys():
-                    if isinstance(layouts[nfi], list):
-                        newLayout = layouts[nfi]
-                    else:
-                        newLayout = [layouts[nfi]]
-                    newfr = nfi
-                    break
-            # tween the list here
-            oldLayout.sort(key=lambda tup: tup[0][0])
-            newLayout.sort(key=lambda tup: tup[0][0])
-            tLayout = []
-            t = fr - oldfr
-            if t < 0:
-                wordcloud.layout = oldLayout
-                # Before the first word
-            elif t >= maxframe:
-                wordcloud.layout = newLayout
-                # At or after the last frame
-            else:
-                frange = newfr - oldfr
-                t = t / frange
-                for i in range(0, len(oldLayout)):
-                    # j for new, i for old
-                    j = i
-                    if (len(newLayout) >= i+2):
-                        if (oldLayout[i][0][0] != newLayout[i][0][0]):
-                            j = i+1
-                    wordtup = (
-                        oldLayout[i][0],
-                        int(tween(oldLayout[i][1], newLayout[j][1], t)),
-                        (
-                            int(tween(oldLayout[i][2][0], newLayout[j][2][0], t)),
-                            int(tween(oldLayout[i][2][1], newLayout[j][2][1], t)),
-                        ),
-                        None,
-                        'yellow'
+            words += newWord + ' '
+            # Frame number at 30fps
+            curFrame = int(float(item['start_time']) * 30)
+            if (curFrame >= nextFrame):
+                nextFrame = curFrame + 90  # 3 seconds @ 30fps
+                try:
+                    wordcloud = WordCloud(
+                        width=1920,
+                        height=1080,
+                        scale=1,
+                        font_path=fontpath,
+                        random_state=82397,
+                        prefer_horizontal=1,
+                        stopwords=None,
+                        max_words=5000,
+                        max_font_size=150,
+                        min_font_size=1,
+                        color_func=lambda *args, **kwargs: 'white'
                     )
-                    tLayout.append(wordtup)
-                    wordcloud.layout_ = tLayout
-        image_colors = ImageColorGenerator(alan_coloring)
-        wordcloud.recolor(color_func = image_colors)
-        #image = wordcloud.to_file('hams3/' + str(fr) + '.png')
-        image = wordcloud.to_array()
-        video.write(image)
+                    if fontPath != None:
+                        wordcloud.font_path = fontPath
+                    wordcloud.generate(words)
+                except:
+                    continue
+
+                # Sync the old/new word lists for tweening
+                newLayout = wordcloud.layout_
+                for newLayoutWord in newLayout:
+                    if any(wrd[0][0] == newLayoutWord[0][0] for wrd in oldLayout) == False:
+                        oldLayout.append(
+                            (newLayoutWord[0], 1, (540, 960), None, 'white'))
+
+                # Generate the actual frames
+                for vidFrame in range(lastFrame, curFrame, 1):
+                    ic(vidFrame)
+                    oldLayout.sort(key=lambda tup: tup[0][0])
+                    newLayout.sort(key=lambda tup: tup[0][0])
+                    frameLayout = []
+                    frameRange = curFrame - lastFrame
+                    t = (vidFrame - lastFrame) / frameRange
+                    for i in range(0, len(newLayout)):
+                        wordtup = (
+                            newLayout[i][0],
+                            int(tween(oldLayout[i][1], newLayout[i][1], t)),
+                            (
+                                int(tween(oldLayout[i][2][0],
+                                    newLayout[i][2][0], t)),
+                                int(tween(oldLayout[i][2][1],
+                                    newLayout[i][2][1], t)),
+                            ),
+                            None,
+                            'white'
+                        )
+                        frameLayout.append(wordtup)
+                    wordcloud.layout_ = frameLayout
+                    if (colorMaskFile):
+                        image_colors = ImageColorGenerator(colorMask)
+                        wordcloud.recolor(color_func=image_colors)
+                    image = wordcloud.to_array()
+                    video.write(image)
+                oldLayout = newLayout
+                lastFrame = curFrame
     video.release()
+    ic('All done!')
 
 main()
